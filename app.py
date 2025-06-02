@@ -1,4 +1,4 @@
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, redirect
 import requests
 import re
 from typing import List, Optional, Dict, Any
@@ -9,6 +9,8 @@ from collections import Counter
 
 app = Flask(__name__)
 
+FAVICON_URL = "https://i.ibb.co/Wp72bhC0/chat.png"
+
 all_categories = [
     "mens-shoes", "groceries", "motorcycle", "home-decoration", "womens-bags",
     "sunglasses", "furniture", "beauty", "mobile-accessories", "laptops",
@@ -18,11 +20,20 @@ all_categories = [
 ]
 
 PRODUCTS_API = "https://slimcommerce.onrender.com/products"
-
 normalized_categories = {c: re.sub(r"[^a-z0-9]+", "", c.lower()) for c in all_categories}
-
-# Track trending queries
 trending_searches = Counter()
+
+@app.route("/")
+def home():
+    return jsonify({
+        "message": "👋 Welcome to SmartCart AI Assistant!",
+        "endpoints": ["/ask", "/similar", "/trending"]
+    })
+
+
+@app.route("/favicon.ico")
+def favicon():
+    return redirect(FAVICON_URL)
 
 
 def fetch_all_products() -> List[Dict[str, Any]]:
@@ -94,14 +105,13 @@ def ask():
     data = request.get_json(force=True)
     user_input = data.get("query", "").strip().lower()
 
-    # Log for trending
     if user_input:
         trending_searches[user_input] += 1
 
-    # Greeting check
     if user_input in ["hi", "hello", "hey"]:
         return jsonify({
-            "answer": "👋 Hello! I am SmartCart, your AI shopping assistant. Ask me about product availability, price filters, or suggestions!"
+            "answer": "👋 Hello! I am SmartCart, your AI shopping assistant. Ask me about product availability, price filters, or suggestions!",
+            "yes": True
         })
 
     price_search = re.search(r'(?:below|less than|under|<)\s*\$?(\d+(\.\d+)?)', user_input)
@@ -125,17 +135,13 @@ def ask():
             stock = best_product.get("stock", 0)
             availability = best_product.get("availabilitystatus", "").lower()
             in_stock = (availability == "in stock") or (int(stock) > 0)
-            if in_stock:
-                return jsonify({
-                    "answer": f"Yes, '{best_product['title']}' is in stock with {stock} items.",
-                    "product": best_product
-                })
-            else:
-                return jsonify({
-                    "answer": f"Sorry, '{best_product['title']}' is out of stock.",
-                    "product": best_product
-                })
-        return jsonify({"answer": f"Sorry, no match found for '{product_name}'."})
+            return jsonify({
+                "answer": f"Yes, '{best_product['title']}' is in stock with {stock} items." if in_stock else f"Sorry, '{best_product['title']}' is out of stock.",
+                "product": best_product,
+                "yes": in_stock,
+                "no": not in_stock
+            })
+        return jsonify({"answer": f"Sorry, no match found for '{product_name}'.", "no": True})
 
     if matched_category:
         products = fetch_products_by_category(matched_category)
@@ -144,17 +150,20 @@ def ask():
             filtered = [p for p in filtered if safe_float(p.get("price")) < price_limit]
             return jsonify({
                 "answer": f"Products in category '{matched_category}' below ${price_limit}:",
-                "products": filtered
+                "products": filtered,
+                "yes": True
             })
         if price_gt is not None:
             filtered = [p for p in filtered if safe_float(p.get("price")) > price_gt]
             return jsonify({
                 "answer": f"Products in category '{matched_category}' above ${price_gt}:",
-                "products": filtered
+                "products": filtered,
+                "yes": True
             })
         return jsonify({
             "answer": f"Products in category '{matched_category}':",
-            "products": filtered
+            "products": filtered,
+            "yes": True
         })
 
     if price_limit is not None:
@@ -162,7 +171,8 @@ def ask():
         filtered = [p for p in all_products if safe_float(p.get("price")) < price_limit]
         return jsonify({
             "answer": f"Products below ${price_limit}:",
-            "products": filtered
+            "products": filtered,
+            "yes": True
         })
 
     if price_gt is not None:
@@ -170,10 +180,11 @@ def ask():
         filtered = [p for p in all_products if safe_float(p.get("price")) > price_gt]
         return jsonify({
             "answer": f"Products above ${price_gt}:",
-            "products": filtered
+            "products": filtered,
+            "yes": True
         })
 
-    return jsonify({"answer": "Sorry, I didn't understand. Try asking about stock, price, or categories."})
+    return jsonify({"answer": "Sorry, I didn't understand. Try asking about stock, price, or categories.", "no": True})
 
 
 def find_similar_products_knn(target_product: Dict[str, Any], all_products: List[Dict[str, Any]], k: int = 5) -> List[Dict[str, Any]]:
@@ -219,7 +230,7 @@ def similar():
     target_product = find_best_match(product_query, matched_products)
 
     if not target_product:
-        return jsonify({"answer": f"No product found for '{product_query}'."})
+        return jsonify({"answer": f"No product found for '{product_query}'.", "no": True})
 
     category = target_product.get("category", "")
     category_products = fetch_products_by_category(category)
@@ -228,7 +239,8 @@ def similar():
     return jsonify({
         "answer": f"Products similar to '{target_product['title']}' in category '{category}':",
         "target_product": target_product,
-        "similar_products": similar_products
+        "similar_products": similar_products,
+        "yes": True
     })
 
 
