@@ -6,8 +6,10 @@ from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
 from sklearn.neighbors import NearestNeighbors
 from collections import Counter
+from flask_cors import CORS
 
 app = Flask(__name__)
+CORS(app)
 
 FAVICON_URL = "https://i.ibb.co/Wp72bhC0/chat.png"
 
